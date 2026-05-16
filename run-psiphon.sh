@@ -16,6 +16,7 @@ Usage:
   ./run-psiphon.sh [-l LOCATION|--location LOCATION] [-p PORT|--port PORT]
   ./run-psiphon.sh service start [-l LOCATION|--location LOCATION] [-p PORT|--port PORT]
   ./run-psiphon.sh service stop [-l LOCATION|--location LOCATION] [-p PORT|--port PORT]
+  ./run-psiphon.sh supervise [-l LOCATION|--location LOCATION] [-p PORT|--port PORT]
   ./run-psiphon.sh status
   ./run-psiphon.sh stop [-l LOCATION|--location LOCATION] [-p PORT|--port PORT]
   ./run-psiphon.sh locations
@@ -236,6 +237,49 @@ wait_for_region() {
   return 1
 }
 
+instance_health() {
+  local location="$1" socks_port="$2"
+  local http_port=$((socks_port + 1))
+  local instance_dir="$INSTANCES_DIR/${location}-${socks_port}"
+  local conf="$instance_dir/client.config"
+  local pid_file="$instance_dir/psiphon.pid"
+
+  local pid socks_forward_pid http_forward_pid
+  pid="$(running_psiphon_pid "$pid_file" "$conf" 2>/dev/null || true)"
+  [[ -n "$pid" ]] || return 1
+
+  socks_forward_pid="$(running_forwarder_pid "$instance_dir/socks-forward.pid" "$socks_port" 2>/dev/null || true)"
+  [[ -n "$socks_forward_pid" ]] || return 1
+
+  http_forward_pid="$(running_forwarder_pid "$instance_dir/http-forward.pid" "$http_port" 2>/dev/null || true)"
+  [[ -n "$http_forward_pid" ]] || return 1
+}
+
+stop_instance_resolved() {
+  local location="$1" socks_port="$2" quiet="${3:-false}"
+  local instance_dir="$INSTANCES_DIR/${location}-${socks_port}"
+  local conf="$instance_dir/client.config"
+  local pid_file="$instance_dir/psiphon.pid"
+  local http_port=$((socks_port + 1))
+
+  local item fpid_file public_port fpid
+  for item in "$instance_dir/socks-forward.pid:$socks_port" "$instance_dir/http-forward.pid:$http_port"; do
+    fpid_file="${item%%:*}"
+    public_port="${item##*:}"
+    if fpid="$(running_forwarder_pid "$fpid_file" "$public_port" 2>/dev/null)"; then
+      kill "$fpid" || true
+    fi
+  done
+
+  local pid
+  if pid="$(running_psiphon_pid "$pid_file" "$conf" 2>/dev/null)"; then
+    kill "$pid" || true
+    [[ "$quiet" == true ]] || echo "stopped: location=$location socks=$socks_port pid=$pid"
+  else
+    [[ "$quiet" == true ]] || echo "not running: location=$location socks=$socks_port"
+  fi
+}
+
 status_all() {
   need_root "$@"
   mkdir -p "$INSTANCES_DIR"
@@ -284,13 +328,15 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=oneshot
-RemainAfterExit=yes
+Type=simple
 WorkingDirectory=$ROOT_DIR
-ExecStart=$ROOT_DIR/run-psiphon.sh run -l $location -p $socks_port
+ExecStart=$ROOT_DIR/run-psiphon.sh supervise -l $location -p $socks_port
 ExecStop=$ROOT_DIR/run-psiphon.sh stop -l $location -p $socks_port
+Restart=always
+RestartSec=5
 TimeoutStartSec=180
 TimeoutStopSec=30
+KillMode=control-group
 
 [Install]
 WantedBy=multi-user.target
@@ -315,12 +361,8 @@ service_stop() {
   echo "service stopped: $unit"
 }
 
-start_instance() {
-  need_root "$@"
-  need_files
-
-  resolve_location_port "${1:-}" "${2:-}"
-  local location="$RESOLVED_LOCATION" socks_port="$RESOLVED_PORT"
+start_instance_locked() {
+  local location="$1" socks_port="$2" wait_region="${3:-true}"
   local http_port=$((socks_port + 1))
 
   local instance_dir="$INSTANCES_DIR/${location}-${socks_port}"
@@ -329,17 +371,18 @@ start_instance() {
   local pid_file="$instance_dir/psiphon.pid"
   local socks_forward_pid_file="$instance_dir/socks-forward.pid"
   local http_forward_pid_file="$instance_dir/http-forward.pid"
-  local lock_file="$instance_dir/runner.lock"
   local ports_file="$instance_dir/ports.env"
 
-  mkdir -p "$instance_dir"
-  exec 9>"$lock_file"
-  flock -n 9 || die "instance $location/$socks_port is locked by another start"
-
-  local pid
-  if pid="$(running_psiphon_pid "$pid_file" "$conf")"; then
+  if instance_health "$location" "$socks_port"; then
+    local pid
+    pid="$(running_psiphon_pid "$pid_file" "$conf")"
     echo "already running: location=$location socks=0.0.0.0:$socks_port http=0.0.0.0:$http_port pid=$pid"
-    exit 0
+    return 0
+  fi
+
+  if [[ -e "$pid_file" || -e "$socks_forward_pid_file" || -e "$http_forward_pid_file" ]]; then
+    stop_instance_resolved "$location" "$socks_port" true
+    sleep 1
   fi
 
   port_available "$PUBLIC_BIND" "$socks_port" || die "SOCKS port $socks_port is not available"
@@ -382,39 +425,61 @@ EOF
     die "public SOCKS port $socks_port did not open"
   fi
   wait_for_port "$http_port" 15 || true
-  wait_for_region "$log_file" 90 || true
+  if [[ "$wait_region" == true ]]; then
+    wait_for_region "$log_file" 90 || true
+  fi
 
   echo "started: location=$location socks=0.0.0.0:$socks_port http=0.0.0.0:$http_port pid=$pid"
   echo "internal: socks=127.0.0.1:$internal_socks_port http=127.0.0.1:$internal_http_port"
   echo "log: $log_file"
 }
 
-stop_instance() {
+start_instance() {
   need_root "$@"
   resolve_location_port "${1:-}" "${2:-}"
   local location="$RESOLVED_LOCATION" socks_port="$RESOLVED_PORT"
-
   local instance_dir="$INSTANCES_DIR/${location}-${socks_port}"
-  local conf="$instance_dir/client.config"
-  local pid_file="$instance_dir/psiphon.pid"
-  local http_port=$((socks_port + 1))
+  local lock_file="$instance_dir/runner.lock"
 
-  local item fpid_file public_port fpid
-  for item in "$instance_dir/socks-forward.pid:$socks_port" "$instance_dir/http-forward.pid:$http_port"; do
-    fpid_file="${item%%:*}"
-    public_port="${item##*:}"
-    if fpid="$(running_forwarder_pid "$fpid_file" "$public_port" 2>/dev/null)"; then
-      kill "$fpid" || true
+  need_files
+  mkdir -p "$instance_dir"
+  exec 9>"$lock_file"
+  flock -n 9 || die "instance $location/$socks_port is locked by another start"
+  start_instance_locked "$location" "$socks_port" true
+}
+
+supervise_instance() {
+  need_root "$@"
+  need_files
+  resolve_location_port "${1:-}" "${2:-}"
+  local location="$RESOLVED_LOCATION" socks_port="$RESOLVED_PORT"
+  local instance_dir="$INSTANCES_DIR/${location}-${socks_port}"
+  local lock_file="$instance_dir/runner.lock"
+
+  mkdir -p "$instance_dir"
+  exec 9>"$lock_file"
+  flock -n 9 || die "instance $location/$socks_port is locked by another supervisor"
+
+  cleanup() {
+    stop_instance_resolved "$location" "$socks_port" true
+  }
+  trap cleanup EXIT
+  trap 'cleanup; exit 0' INT TERM
+  start_instance_locked "$location" "$socks_port" false
+
+  while true; do
+    sleep 5
+    if ! instance_health "$location" "$socks_port"; then
+      echo "health check failed: location=$location socks=$socks_port; restarting through systemd" >&2
+      exit 1
     fi
   done
+}
 
-  local pid
-  if pid="$(running_psiphon_pid "$pid_file" "$conf")"; then
-    kill "$pid"
-    echo "stopped: location=$location socks=$socks_port pid=$pid"
-  else
-    echo "not running: location=$location socks=$socks_port"
-  fi
+stop_instance() {
+  need_root "$@"
+  resolve_location_port "${1:-}" "${2:-}"
+  stop_instance_resolved "$RESOLVED_LOCATION" "$RESOLVED_PORT"
 }
 
 main() {
@@ -425,6 +490,7 @@ main() {
       status) status_all "$@"; exit 0 ;;
       locations) locations; exit 0 ;;
       run) mode="start"; shift ;;
+      supervise) mode="supervise"; shift ;;
       service)
         mode="service"
         shift
@@ -462,6 +528,7 @@ main() {
 
   case "$mode" in
     start) start_instance "$location" "$port" ;;
+    supervise) supervise_instance "$location" "$port" ;;
     stop) stop_instance "$location" "$port" ;;
     service)
       case "$service_action" in

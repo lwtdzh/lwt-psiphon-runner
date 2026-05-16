@@ -45,7 +45,7 @@ If no parameters are provided, the script asks for the location and SOCKS5 port:
 
 ## Service Mode
 
-Create, enable, and start a systemd service:
+Create, enable, and start a supervised systemd service:
 
 ```bash
 ./run-psiphon.sh service start -l us -p 1000
@@ -63,6 +63,11 @@ The generated unit name uses the location and port:
 lwt-psiphon-us-1000.service
 lwt-psiphon-ca-2000.service
 ```
+
+Service mode uses `run-psiphon.sh supervise` as the systemd main process. It
+starts the Psiphon process and both TCP forwarders, watches them, and exits
+non-zero if any of them disappear. The generated unit uses `Restart=always`, so
+systemd starts the whole instance again after a crash and also starts it on boot.
 
 ## Concurrent Instances
 
