@@ -32,30 +32,33 @@ USAGE
 locations() {
   cat <<'LOCATIONS'
 Supported location inputs:
-  US  United States
-  CA  Canada
-  GB  United Kingdom
-  DE  Germany
-  FR  France
-  NL  Netherlands
-  JP  Japan
-  SG  Singapore
-  AU  Australia
   AT  Austria
+  AU  Australia
   BE  Belgium
-  BG  Bulgaria
+  BR  Brazil
+  CA  Canada
   CH  Switzerland
   CZ  Czech Republic
+  DE  Germany
   DK  Denmark
   ES  Spain
   FI  Finland
-  HU  Hungary
+  FR  France
+  GB  United Kingdom
+  ID  Indonesia
   IE  Ireland
+  IN  India
   IT  Italy
+  JP  Japan
+  LT  Lithuania
+  NL  Netherlands
   NO  Norway
   PL  Poland
   RO  Romania
+  RS  Serbia
   SE  Sweden
+  SG  Singapore
+  US  United States
 LOCATIONS
 }
 
@@ -63,30 +66,33 @@ normalize_location() {
   local raw
   raw="$(printf '%s' "$1" | tr '[:lower:]' '[:upper:]' | sed -E 's/^[[:space:]]+|[[:space:]]+$//g; s/[[:space:]_-]+/ /g')"
   case "$raw" in
-    US|USA|"UNITED STATES"|"UNITED STATES OF AMERICA"|AMERICA) echo US ;;
-    CA|CANADA) echo CA ;;
-    GB|UK|"UNITED KINGDOM"|"GREAT BRITAIN"|BRITAIN) echo GB ;;
-    DE|GERMANY|DEUTSCHLAND) echo DE ;;
-    FR|FRANCE) echo FR ;;
-    NL|NETHERLANDS|HOLLAND) echo NL ;;
-    JP|JAPAN) echo JP ;;
-    SG|SINGAPORE) echo SG ;;
-    AU|AUSTRALIA) echo AU ;;
     AT|AUSTRIA) echo AT ;;
+    AU|AUSTRALIA) echo AU ;;
     BE|BELGIUM) echo BE ;;
-    BG|BULGARIA) echo BG ;;
+    BR|BRAZIL) echo BR ;;
+    CA|CANADA) echo CA ;;
     CH|SWITZERLAND) echo CH ;;
     CZ|CZECH|"CZECH REPUBLIC"|CZECHIA) echo CZ ;;
+    DE|GERMANY|DEUTSCHLAND) echo DE ;;
     DK|DENMARK) echo DK ;;
     ES|SPAIN) echo ES ;;
     FI|FINLAND) echo FI ;;
-    HU|HUNGARY) echo HU ;;
+    FR|FRANCE) echo FR ;;
+    GB|UK|"UNITED KINGDOM"|"GREAT BRITAIN"|BRITAIN) echo GB ;;
+    ID|INDONESIA) echo ID ;;
     IE|IRELAND) echo IE ;;
+    IN|INDIA) echo IN ;;
     IT|ITALY) echo IT ;;
+    JP|JAPAN) echo JP ;;
+    LT|LITHUANIA) echo LT ;;
+    NL|NETHERLANDS|HOLLAND) echo NL ;;
     NO|NORWAY) echo NO ;;
     PL|POLAND) echo PL ;;
     RO|ROMANIA) echo RO ;;
+    RS|SERBIA) echo RS ;;
     SE|SWEDEN) echo SE ;;
+    SG|SINGAPORE) echo SG ;;
+    US|USA|"UNITED STATES"|"UNITED STATES OF AMERICA"|AMERICA) echo US ;;
     *) return 1 ;;
   esac
 }

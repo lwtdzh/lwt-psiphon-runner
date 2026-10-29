@@ -151,19 +151,41 @@ List supported location inputs:
 ./run-psiphon.sh locations
 ```
 
-Common examples:
+Current Psiphon egress regions:
 
 ```text
-US  United States
-CA  Canada
-GB  United Kingdom
-DE  Germany
-FR  France
-NL  Netherlands
-JP  Japan
-SG  Singapore
+AT  Austria
 AU  Australia
+BE  Belgium
+BR  Brazil
+CA  Canada
+CH  Switzerland
+CZ  Czech Republic
+DE  Germany
+DK  Denmark
+ES  Spain
+FI  Finland
+FR  France
+GB  United Kingdom
+ID  Indonesia
+IE  Ireland
+IN  India
+IT  Italy
+JP  Japan
+LT  Lithuania
+NL  Netherlands
+NO  Norway
+PL  Poland
+RO  Romania
+RS  Serbia
+SE  Sweden
+SG  Singapore
+US  United States
 ```
+
+Psiphon's server inventory changes over time. This list reflects the
+`AvailableEgressRegions` reported by the bundled client and current server
+list. Run `./run-psiphon.sh locations` to see the same list locally.
 
 ## How Concurrency Works
 
